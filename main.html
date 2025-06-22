@@ -159,6 +159,11 @@
             font-style: italic;
         }
         
+        .replacement-desc {
+            color: #ce9178;
+            font-style: italic;
+        }
+        
         .status {
             margin-top: 10px;
             padding: 8px;
@@ -197,7 +202,7 @@
         
         <div class="editor-container">
             <label class="editor-label">Replacement Pattern</label>
-            <textarea id="replacement" placeholder="Use $1, $2, etc. for captured groups&#10;Example: $1 replaced $2"></textarea>
+            <textarea id="replacement" placeholder="Type 're' for replacement patterns...&#10;$1, $2 for groups&#10;$&lt;name&gt; for named groups"></textarea>
         </div>
     </div>
     
@@ -309,6 +314,72 @@
             'swap': { pattern: '({content})\\s+({content})', desc: 'Two groups for swapping - use $2 $1', needsContent: true },
             'extract': { pattern: '.*?({content}).*?', desc: 'Extract specific content from line', needsContent: true }
         };
+
+        // Replacement patterns for autocomplete
+        const replacementPatterns = {
+            // Basic replacements
+            'replace group 1': { pattern: '$1', desc: 'Replace with first captured group' },
+            'replace group 2': { pattern: '$2', desc: 'Replace with second captured group' },
+            'replace group 3': { pattern: '$3', desc: 'Replace with third captured group' },
+            'replace group 4': { pattern: '$4', desc: 'Replace with fourth captured group' },
+            'replace group 5': { pattern: '$5', desc: 'Replace with fifth captured group' },
+            
+            // Named groups
+            'replace named group': { pattern: '$<name>', desc: 'Replace with named group (change "name")', needsContent: true },
+            'replace named': { pattern: '$<{content}>', desc: 'Replace with specific named group', needsContent: true },
+            
+            // Special replacements
+            'replace whole match': { pattern: '$&', desc: 'Replace with entire match' },
+            'replace before match': { pattern: '$`', desc: 'Replace with text before match' },
+            'replace after match': { pattern: "$'", desc: 'Replace with text after match' },
+            
+            // Common patterns
+            'swap groups': { pattern: '$2 $1', desc: 'Swap first two groups' },
+            'swap 3 groups': { pattern: '$3 $2 $1', desc: 'Reverse first three groups' },
+            'format name': { pattern: '$2, $1', desc: 'Format as "Last, First"' },
+            'format phone': { pattern: '($1) $2-$3', desc: 'Format phone as (xxx) xxx-xxxx' },
+            'format date': { pattern: '$3-$1-$2', desc: 'Format date as YYYY-MM-DD' },
+            
+            // Text manipulation
+            'add prefix': { pattern: 'PREFIX: $1', desc: 'Add prefix to captured group' },
+            'add suffix': { pattern: '$1 SUFFIX', desc: 'Add suffix to captured group' },
+            'wrap quotes': { pattern: '"$1"', desc: 'Wrap first group in quotes' },
+            'wrap brackets': { pattern: '[$1]', desc: 'Wrap first group in brackets' },
+            'wrap parens': { pattern: '($1)', desc: 'Wrap first group in parentheses' },
+            
+            // Line manipulation
+            'remove line': { pattern: '', desc: 'Remove entire match (empty replacement)' },
+            'duplicate line': { pattern: '$&\\n$&', desc: 'Duplicate the matched line' },
+            'indent line': { pattern: '    $&', desc: 'Add 4-space indent to line' },
+            'comment line': { pattern: '// $&', desc: 'Comment out the line' },
+            
+            // Advanced patterns
+            'conditional replace': { pattern: '$1${2:+ $2}', desc: 'Include $2 only if it exists' },
+            'uppercase group': { pattern: '${1^^}', desc: 'Convert group 1 to uppercase (bash style)' },
+            'lowercase group': { pattern: '${1,,}', desc: 'Convert group 1 to lowercase (bash style)' },
+            
+            // Multi-group combinations
+            'combine all': { pattern: '$1$2$3$4$5', desc: 'Concatenate first 5 groups' },
+            'space separated': { pattern: '$1 $2 $3', desc: 'Space-separated first 3 groups' },
+            'comma separated': { pattern: '$1, $2, $3', desc: 'Comma-separated first 3 groups' },
+            'pipe separated': { pattern: '$1|$2|$3', desc: 'Pipe-separated first 3 groups' },
+            
+            // HTML/XML
+            'html tag': { pattern: '<tag>$1</tag>', desc: 'Wrap in HTML tag' },
+            'html link': { pattern: '<a href="$2">$1</a>', desc: 'Create HTML link' },
+            'xml element': { pattern: '<element>$1</element>', desc: 'Wrap in XML element' },
+            
+            // Programming
+            'function call': { pattern: 'function($1)', desc: 'Wrap in function call' },
+            'array element': { pattern: 'array[$1]', desc: 'Make array access' },
+            'property access': { pattern: 'object.$1', desc: 'Make property access' },
+            'string literal': { pattern: "'$1'", desc: 'Make string literal' },
+            
+            // Custom with content
+            'custom prefix': { pattern: '{content}: $1', desc: 'Add custom prefix to group 1', needsContent: true },
+            'custom suffix': { pattern: '$1 {content}', desc: 'Add custom suffix to group 1', needsContent: true },
+            'custom wrap': { pattern: '{content}$1{content}', desc: 'Wrap group 1 with custom text', needsContent: true }
+        };
         
         let currentSuggestions = [];
         let selectedIndex = -1;
@@ -334,7 +405,7 @@
             return { word, start, end: cursorPos };
         }
         
-        function showAutocomplete(suggestions) {
+        function showAutocomplete(suggestions, isReplacement = false) {
             if (suggestions.length === 0) {
                 hideAutocomplete();
                 return;
@@ -349,10 +420,12 @@
                 item.className = 'autocomplete-item';
                 if (index === 0) item.classList.add('selected');
                 
-                const contentIndicator = suggestion.needsContent ? ' ⚡' : '';
+                const contentIndicator = suggestion.needsContent ? ' ?' : '';
+                const descClass = isReplacement ? 'replacement-desc' : 'pattern-desc';
+                
                 item.innerHTML = `
-                    <strong>${suggestion.key}${contentIndicator}</strong> → <code>${suggestion.pattern.replace(/{content}/g, '...')}</code><br>
-                    <span class="pattern-desc">${suggestion.desc}</span>
+                    <strong>${suggestion.key}${contentIndicator}</strong> ? <code>${suggestion.pattern.replace(/{content}/g, '...')}</code><br>
+                    <span class="${descClass}">${suggestion.desc}</span>
                 `;
                 
                 item.addEventListener('click', () => selectPattern(suggestion));
@@ -364,7 +437,8 @@
             autocompletePopup.style.top = pos.y + 'px';
             autocompletePopup.style.display = 'block';
             
-            updateStatus(`Found ${suggestions.length} patterns. Use ↑↓ to navigate, Enter to select.`);
+            const type = isReplacement ? 'replacement' : 'pattern';
+            updateStatus(`Found ${suggestions.length} ${type}s. Use ?? to navigate, Enter to select.`);
         }
         
         function hideAutocomplete() {
@@ -531,7 +605,7 @@
             updateStatus('All fields cleared.');
         }
         
-        function setupEditorEvents(editorElement) {
+        function setupEditorEvents(editorElement, isReplacementEditor = false) {
             editorElement.addEventListener('input', (e) => {
                 if (isInputMode) return;
                 
@@ -540,7 +614,9 @@
                 const currentWord = wordInfo.word;
                 
                 if (currentWord.length > 0) {
-                    const matches = Object.entries(regexPatterns)
+                    const patterns = isReplacementEditor ? replacementPatterns : regexPatterns;
+                    
+                    const matches = Object.entries(patterns)
                         .filter(([key]) => key.toLowerCase().includes(currentWord))
                         .map(([key, value]) => ({ 
                             key, 
@@ -557,14 +633,18 @@
                         });
                     
                     if (matches.length > 0) {
-                        showAutocomplete(matches);
+                        showAutocomplete(matches, isReplacementEditor);
                     } else {
                         hideAutocomplete();
-                        updateStatus('No matching patterns found.');
+                        const type = isReplacementEditor ? 'replacement patterns' : 'patterns';
+                        updateStatus(`No matching ${type} found.`);
                     }
                 } else {
                     hideAutocomplete();
-                    updateStatus('Ready - Start typing to see suggestions');
+                    const hint = isReplacementEditor ? 
+                        'Ready - Type "re" for replacement patterns' : 
+                        'Ready - Start typing to see suggestions';
+                    updateStatus(hint);
                 }
             });
             
@@ -598,8 +678,8 @@
         }
         
         // Setup events for both editors
-        setupEditorEvents(editor);
-        setupEditorEvents(replacement);
+        setupEditorEvents(editor, false);
+        setupEditorEvents(replacement, true);
         
         // Pattern input event listeners
         patternInput.addEventListener('keydown', (e) => {

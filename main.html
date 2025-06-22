@@ -1,0 +1,328 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Regex Pattern Helper</title>
+    <style>
+        body {
+            font-family: 'Courier New', monospace;
+            margin: 20px;
+            background: #1e1e1e;
+            color: #d4d4d4;
+        }
+        
+        .editor-container {
+            position: relative;
+            width: 100%;
+            height: 500px;
+        }
+        
+        #editor {
+            width: 100%;
+            height: 100%;
+            background: #2d2d30;
+            color: #d4d4d4;
+            border: 1px solid #3e3e42;
+            padding: 10px;
+            font-family: 'Courier New', monospace;
+            font-size: 14px;
+            resize: none;
+            outline: none;
+        }
+        
+        .autocomplete-popup {
+            position: absolute;
+            background: #252526;
+            border: 1px solid #3e3e42;
+            border-radius: 4px;
+            max-height: 300px;
+            overflow-y: auto;
+            z-index: 1000;
+            display: none;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.3);
+            min-width: 300px;
+        }
+        
+        .autocomplete-item {
+            padding: 8px 12px;
+            cursor: pointer;
+            border-bottom: 1px solid #3e3e42;
+            font-size: 12px;
+        }
+        
+        .autocomplete-item:hover,
+        .autocomplete-item.selected {
+            background: #094771;
+        }
+        
+        .autocomplete-item:last-child {
+            border-bottom: none;
+        }
+        
+        .pattern-desc {
+            color: #6a9955;
+            font-style: italic;
+        }
+    </style>
+</head>
+<body>
+    <h1>Regex Pattern Helper</h1>
+    <p>Type regex pattern names to get the actual patterns. Try: "any char", "digit", "word", "start", etc.</p>
+    <div class="editor-container">
+        <textarea id="editor" placeholder="Start typing regex pattern names... Try 'any char', 'digit', 'word boundary', etc."></textarea>
+        <div id="autocomplete" class="autocomplete-popup"></div>
+    </div>
+
+    <script>
+        const editor = document.getElementById('editor');
+        const autocompletePopup = document.getElementById('autocomplete');
+        
+        const regexPatterns = {
+            // Basic patterns
+            'any char': { pattern: '.', desc: 'Matches any single character except newline' },
+            'any character': { pattern: '.', desc: 'Matches any single character except newline' },
+            'digit': { pattern: '\\d', desc: 'Matches any digit (0-9)' },
+            'non digit': { pattern: '\\D', desc: 'Matches any non-digit character' },
+            'word': { pattern: '\\w', desc: 'Matches word characters (a-z, A-Z, 0-9, _)' },
+            'non word': { pattern: '\\W', desc: 'Matches non-word characters' },
+            'whitespace': { pattern: '\\s', desc: 'Matches whitespace (space, tab, newline)' },
+            'non whitespace': { pattern: '\\S', desc: 'Matches non-whitespace characters' },
+            
+            // Anchors
+            'start': { pattern: '^', desc: 'Start of string/line' },
+            'end': { pattern: '$', desc: 'End of string/line' },
+            'word boundary': { pattern: '\\b', desc: 'Word boundary' },
+            'non word boundary': { pattern: '\\B', desc: 'Non-word boundary' },
+            
+            // Quantifiers
+            'zero or more': { pattern: '*', desc: 'Zero or more of preceding element' },
+            'one or more': { pattern: '+', desc: 'One or more of preceding element' },
+            'zero or one': { pattern: '?', desc: 'Zero or one of preceding element' },
+            'optional': { pattern: '?', desc: 'Makes preceding element optional' },
+            'exactly n': { pattern: '{n}', desc: 'Exactly n occurrences' },
+            'n or more': { pattern: '{n,}', desc: 'n or more occurrences' },
+            'between n and m': { pattern: '{n,m}', desc: 'Between n and m occurrences' },
+            
+            // Character classes
+            'any of': { pattern: '[abc]', desc: 'Any one of the characters a, b, or c' },
+            'not any of': { pattern: '[^abc]', desc: 'Any character except a, b, or c' },
+            'range': { pattern: '[a-z]', desc: 'Any character in range (e.g., a to z)' },
+            'lowercase': { pattern: '[a-z]', desc: 'Any lowercase letter' },
+            'uppercase': { pattern: '[A-Z]', desc: 'Any uppercase letter' },
+            'letters': { pattern: '[a-zA-Z]', desc: 'Any letter' },
+            'alphanumeric': { pattern: '[a-zA-Z0-9]', desc: 'Any letter or digit' },
+            
+            // Groups
+            'group': { pattern: '()', desc: 'Capturing group' },
+            'non capturing': { pattern: '(?:)', desc: 'Non-capturing group' },
+            'or': { pattern: '|', desc: 'Alternation (OR)' },
+            
+            // Lookarounds
+            'positive lookahead': { pattern: '(?=)', desc: 'Positive lookahead' },
+            'negative lookahead': { pattern: '(?!)', desc: 'Negative lookahead' },
+            'positive lookbehind': { pattern: '(?<=)', desc: 'Positive lookbehind' },
+            'negative lookbehind': { pattern: '(?<!)', desc: 'Negative lookbehind' },
+            
+            // Common patterns
+            'email': { pattern: '[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}', desc: 'Basic email pattern' },
+            'phone': { pattern: '\\(?\\d{3}\\)?[-.]?\\d{3}[-.]?\\d{4}', desc: 'US phone number' },
+            'url': { pattern: 'https?://[^\\s]+', desc: 'Basic URL pattern' },
+            'ip address': { pattern: '\\b(?:[0-9]{1,3}\\.){3}[0-9]{1,3}\\b', desc: 'IPv4 address' },
+            'hex color': { pattern: '#[a-fA-F0-9]{6}', desc: 'Hex color code' },
+            'date': { pattern: '\\d{1,2}/\\d{1,2}/\\d{4}', desc: 'Date in MM/DD/YYYY format' },
+            
+            // Escape sequences
+            'literal dot': { pattern: '\\.', desc: 'Literal dot character' },
+            'literal question': { pattern: '\\?', desc: 'Literal question mark' },
+            'literal plus': { pattern: '\\+', desc: 'Literal plus sign' },
+            'literal star': { pattern: '\\*', desc: 'Literal asterisk' },
+            'literal bracket': { pattern: '\\[', desc: 'Literal opening bracket' },
+            'literal paren': { pattern: '\\(', desc: 'Literal opening parenthesis' },
+            'tab': { pattern: '\\t', desc: 'Tab character' },
+            'newline': { pattern: '\\n', desc: 'Newline character' },
+            'carriage return': { pattern: '\\r', desc: 'Carriage return character' }
+        };
+        
+        let currentSuggestions = [];
+        let selectedIndex = -1;
+        let currentWord = '';
+        let wordStartPos = 0;
+        
+        function getWordAtCursor() {
+            const cursorPos = editor.selectionStart;
+            const text = editor.value;
+            
+            let start = cursorPos;
+            while (start > 0 && /[\w\s]/.test(text[start - 1])) {
+                start--;
+            }
+            
+            let end = cursorPos;
+            while (end < text.length && /[\w\s]/.test(text[end])) {
+                end++;
+            }
+            
+            return {
+                word: text.substring(start, end).trim(),
+                start: start,
+                end: end
+            };
+        }
+        
+        function showAutocomplete(suggestions, x, y) {
+            if (suggestions.length === 0) {
+                hideAutocomplete();
+                return;
+            }
+            
+            autocompletePopup.innerHTML = '';
+            currentSuggestions = suggestions;
+            selectedIndex = 0;
+            
+            suggestions.forEach((suggestion, index) => {
+                const item = document.createElement('div');
+                item.className = 'autocomplete-item';
+                if (index === 0) item.classList.add('selected');
+                
+                item.innerHTML = `
+                    <strong>${suggestion.key}</strong> ? <code>${suggestion.pattern}</code><br>
+                    <span class="pattern-desc">${suggestion.desc}</span>
+                `;
+                
+                item.addEventListener('click', () => applySuggestion(suggestion));
+                autocompletePopup.appendChild(item);
+            });
+            
+            autocompletePopup.style.left = x + 'px';
+            autocompletePopup.style.top = y + 'px';
+            autocompletePopup.style.display = 'block';
+        }
+        
+        function hideAutocomplete() {
+            autocompletePopup.style.display = 'none';
+            currentSuggestions = [];
+            selectedIndex = -1;
+        }
+        
+        function applySuggestion(suggestion) {
+            const cursorPos = editor.selectionStart;
+            const text = editor.value;
+            const wordInfo = getWordAtCursor();
+            
+            const before = text.substring(0, wordInfo.start);
+            const after = text.substring(wordInfo.end);
+            const newText = before + suggestion.pattern + after;
+            
+            editor.value = newText;
+            
+            // Position cursor after the inserted pattern
+            const newCursorPos = wordInfo.start + suggestion.pattern.length;
+            editor.setSelectionRange(newCursorPos, newCursorPos);
+            
+            hideAutocomplete();
+            editor.focus();
+        }
+        
+        function updateSelection(direction) {
+            if (currentSuggestions.length === 0) return;
+            
+            const items = autocompletePopup.querySelectorAll('.autocomplete-item');
+            items[selectedIndex].classList.remove('selected');
+            
+            selectedIndex += direction;
+            if (selectedIndex < 0) selectedIndex = currentSuggestions.length - 1;
+            if (selectedIndex >= currentSuggestions.length) selectedIndex = 0;
+            
+            items[selectedIndex].classList.add('selected');
+            items[selectedIndex].scrollIntoView({ block: 'nearest' });
+        }
+        
+        function getCursorPosition() {
+            const cursorPos = editor.selectionStart;
+            const textBeforeCursor = editor.value.substring(0, cursorPos);
+            const lines = textBeforeCursor.split('\n');
+            const currentLine = lines.length - 1;
+            const currentColumn = lines[currentLine].length;
+            
+            const lineHeight = 20;
+            const charWidth = 8.4;
+            
+            return {
+                x: currentColumn * charWidth + 10,
+                y: currentLine * lineHeight + 30
+            };
+        }
+        
+        editor.addEventListener('input', (e) => {
+            const wordInfo = getWordAtCursor();
+            currentWord = wordInfo.word.toLowerCase();
+            wordStartPos = wordInfo.start;
+            
+            if (currentWord.length > 1) {
+                const matches = Object.entries(regexPatterns)
+                    .filter(([key]) => key.toLowerCase().includes(currentWord))
+                    .map(([key, value]) => ({ 
+                        key, 
+                        pattern: value.pattern, 
+                        desc: value.desc 
+                    }))
+                    .sort((a, b) => {
+                        // Prioritize exact matches and starts-with matches
+                        const aStarts = a.key.toLowerCase().startsWith(currentWord);
+                        const bStarts = b.key.toLowerCase().startsWith(currentWord);
+                        if (aStarts && !bStarts) return -1;
+                        if (!aStarts && bStarts) return 1;
+                        return a.key.length - b.key.length;
+                    });
+                
+                if (matches.length > 0) {
+                    const pos = getCursorPosition();
+                    showAutocomplete(matches, pos.x, pos.y);
+                } else {
+                    hideAutocomplete();
+                }
+            } else {
+                hideAutocomplete();
+            }
+        });
+        
+        editor.addEventListener('keydown', (e) => {
+            if (autocompletePopup.style.display === 'block') {
+                switch (e.key) {
+                    case 'ArrowDown':
+                        e.preventDefault();
+                        updateSelection(1);
+                        break;
+                    case 'ArrowUp':
+                        e.preventDefault();
+                        updateSelection(-1);
+                        break;
+                    case 'Enter':
+                    case 'Tab':
+                        e.preventDefault();
+                        if (selectedIndex >= 0 && currentSuggestions[selectedIndex]) {
+                            applySuggestion(currentSuggestions[selectedIndex]);
+                        }
+                        break;
+                    case 'Escape':
+                        hideAutocomplete();
+                        break;
+                }
+            }
+        });
+        
+        // Hide autocomplete when clicking outside
+        document.addEventListener('click', (e) => {
+            if (!editor.contains(e.target) && !autocompletePopup.contains(e.target)) {
+                hideAutocomplete();
+            }
+        });
+        
+        // Hide autocomplete when editor loses focus
+        editor.addEventListener('blur', () => {
+            setTimeout(hideAutocomplete, 150);
+        });
+    </script>
+</body>
+</html>

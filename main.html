@@ -31,6 +31,35 @@
             outline: none;
         }
         
+        .input-overlay {
+            position: absolute;
+            background: #252526;
+            border: 2px solid #007acc;
+            border-radius: 4px;
+            padding: 8px;
+            display: none;
+            z-index: 1001;
+            min-width: 300px;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.3);
+        }
+        
+        .input-overlay input {
+            width: 100%;
+            background: #3c3c3c;
+            border: 1px solid #555;
+            color: #d4d4d4;
+            padding: 4px 8px;
+            font-family: 'Courier New', monospace;
+            font-size: 12px;
+            outline: none;
+        }
+        
+        .input-overlay .hint {
+            color: #6a9955;
+            font-size: 11px;
+            margin-bottom: 4px;
+        }
+        
         .autocomplete-popup {
             position: absolute;
             background: #252526;
@@ -64,113 +93,112 @@
             color: #6a9955;
             font-style: italic;
         }
+        
+        .status {
+            margin-top: 10px;
+            padding: 8px;
+            background: #2d2d30;
+            border: 1px solid #3e3e42;
+            border-radius: 4px;
+            font-size: 12px;
+            color: #6a9955;
+        }
     </style>
 </head>
 <body>
     <h1>Regex Pattern Helper</h1>
-    <p>Type regex pattern names to get the actual patterns. Try: "any char", "digit", "word", "start", etc.</p>
+    <p>Type to get pattern suggestions. Select a pattern, then type its content and press Enter.</p>
     <div class="editor-container">
-        <textarea id="editor" placeholder="Start typing regex pattern names... Try 'any char', 'digit', 'word boundary', etc."></textarea>
+        <textarea id="editor" placeholder="Start typing... Try 'any', 'digit', 'word', etc."></textarea>
         <div id="autocomplete" class="autocomplete-popup"></div>
+        <div id="inputOverlay" class="input-overlay">
+            <div class="hint" id="inputHint">Enter content for pattern:</div>
+            <input type="text" id="patternInput" placeholder="Type content here...">
+        </div>
     </div>
+    <div id="status" class="status">Ready - Start typing to see suggestions</div>
 
     <script>
         const editor = document.getElementById('editor');
         const autocompletePopup = document.getElementById('autocomplete');
+        const inputOverlay = document.getElementById('inputOverlay');
+        const patternInput = document.getElementById('patternInput');
+        const inputHint = document.getElementById('inputHint');
+        const status = document.getElementById('status');
         
         const regexPatterns = {
             // Basic patterns
-            'any char': { pattern: '.', desc: 'Matches any single character except newline' },
-            'any character': { pattern: '.', desc: 'Matches any single character except newline' },
-            'digit': { pattern: '\\d', desc: 'Matches any digit (0-9)' },
-            'non digit': { pattern: '\\D', desc: 'Matches any non-digit character' },
-            'word': { pattern: '\\w', desc: 'Matches word characters (a-z, A-Z, 0-9, _)' },
-            'non word': { pattern: '\\W', desc: 'Matches non-word characters' },
-            'whitespace': { pattern: '\\s', desc: 'Matches whitespace (space, tab, newline)' },
-            'non whitespace': { pattern: '\\S', desc: 'Matches non-whitespace characters' },
+            'any': { pattern: '.', desc: 'Matches any single character except newline', needsContent: false },
+            'digit': { pattern: '\\d', desc: 'Matches any digit (0-9)', needsContent: false },
+            'digits': { pattern: '\\d+', desc: 'Matches one or more digits', needsContent: false },
+            'word': { pattern: '\\w+', desc: 'Matches word characters', needsContent: false },
+            'space': { pattern: '\\s', desc: 'Matches whitespace', needsContent: false },
+            'spaces': { pattern: '\\s+', desc: 'Matches one or more whitespace', needsContent: false },
             
             // Anchors
-            'start': { pattern: '^', desc: 'Start of string/line' },
-            'end': { pattern: '$', desc: 'End of string/line' },
-            'word boundary': { pattern: '\\b', desc: 'Word boundary' },
-            'non word boundary': { pattern: '\\B', desc: 'Non-word boundary' },
+            'start': { pattern: '^', desc: 'Start of string/line', needsContent: false },
+            'end': { pattern: '$', desc: 'End of string/line', needsContent: false },
+            'boundary': { pattern: '\\b', desc: 'Word boundary', needsContent: false },
             
-            // Quantifiers
-            'zero or more': { pattern: '*', desc: 'Zero or more of preceding element' },
-            'one or more': { pattern: '+', desc: 'One or more of preceding element' },
-            'zero or one': { pattern: '?', desc: 'Zero or one of preceding element' },
-            'optional': { pattern: '?', desc: 'Makes preceding element optional' },
-            'exactly n': { pattern: '{n}', desc: 'Exactly n occurrences' },
-            'n or more': { pattern: '{n,}', desc: 'n or more occurrences' },
-            'between n and m': { pattern: '{n,m}', desc: 'Between n and m occurrences' },
+            // Quantifiers with content
+            'optional': { pattern: '({content})?', desc: 'Zero or one occurrence', needsContent: true },
+            'multiple': { pattern: '({content})+', desc: 'One or more occurrences', needsContent: true },
+            'any amount': { pattern: '({content})*', desc: 'Zero or more occurrences', needsContent: true },
+            'exactly': { pattern: '({content}){n}', desc: 'Exactly n occurrences (replace n)', needsContent: true },
+            'between': { pattern: '({content}){n,m}', desc: 'Between n and m occurrences', needsContent: true },
             
-            // Character classes
-            'any of': { pattern: '[abc]', desc: 'Any one of the characters a, b, or c' },
-            'not any of': { pattern: '[^abc]', desc: 'Any character except a, b, or c' },
-            'range': { pattern: '[a-z]', desc: 'Any character in range (e.g., a to z)' },
-            'lowercase': { pattern: '[a-z]', desc: 'Any lowercase letter' },
-            'uppercase': { pattern: '[A-Z]', desc: 'Any uppercase letter' },
-            'letters': { pattern: '[a-zA-Z]', desc: 'Any letter' },
-            'alphanumeric': { pattern: '[a-zA-Z0-9]', desc: 'Any letter or digit' },
+            // Character classes with content
+            'any of': { pattern: '[{content}]', desc: 'Any one of the specified characters', needsContent: true },
+            'not': { pattern: '[^{content}]', desc: 'Any character except specified', needsContent: true },
+            'range': { pattern: '[{content}]', desc: 'Character range (e.g., a-z, 0-9)', needsContent: true },
             
-            // Groups
-            'group': { pattern: '()', desc: 'Capturing group' },
-            'non capturing': { pattern: '(?:)', desc: 'Non-capturing group' },
-            'or': { pattern: '|', desc: 'Alternation (OR)' },
+            // Groups with content
+            'group': { pattern: '({content})', desc: 'Capturing group', needsContent: true },
+            'non capturing': { pattern: '(?:{content})', desc: 'Non-capturing group', needsContent: true },
+            'or': { pattern: '{content}|{content}', desc: 'Alternation - separate with |', needsContent: true },
             
-            // Lookarounds
-            'positive lookahead': { pattern: '(?=)', desc: 'Positive lookahead' },
-            'negative lookahead': { pattern: '(?!)', desc: 'Negative lookahead' },
-            'positive lookbehind': { pattern: '(?<=)', desc: 'Positive lookbehind' },
-            'negative lookbehind': { pattern: '(?<!)', desc: 'Negative lookbehind' },
+            // Lookarounds with content
+            'followed by': { pattern: '(?={content})', desc: 'Positive lookahead', needsContent: true },
+            'not followed by': { pattern: '(?!{content})', desc: 'Negative lookahead', needsContent: true },
+            'preceded by': { pattern: '(?<={content})', desc: 'Positive lookbehind', needsContent: true },
+            'not preceded by': { pattern: '(?<!{content})', desc: 'Negative lookbehind', needsContent: true },
+            
+            // Literal escaping
+            'literal': { pattern: '\\{content}', desc: 'Escape special characters', needsContent: true },
             
             // Common patterns
-            'email': { pattern: '[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}', desc: 'Basic email pattern' },
-            'phone': { pattern: '\\(?\\d{3}\\)?[-.]?\\d{3}[-.]?\\d{4}', desc: 'US phone number' },
-            'url': { pattern: 'https?://[^\\s]+', desc: 'Basic URL pattern' },
-            'ip address': { pattern: '\\b(?:[0-9]{1,3}\\.){3}[0-9]{1,3}\\b', desc: 'IPv4 address' },
-            'hex color': { pattern: '#[a-fA-F0-9]{6}', desc: 'Hex color code' },
-            'date': { pattern: '\\d{1,2}/\\d{1,2}/\\d{4}', desc: 'Date in MM/DD/YYYY format' },
-            
-            // Escape sequences
-            'literal dot': { pattern: '\\.', desc: 'Literal dot character' },
-            'literal question': { pattern: '\\?', desc: 'Literal question mark' },
-            'literal plus': { pattern: '\\+', desc: 'Literal plus sign' },
-            'literal star': { pattern: '\\*', desc: 'Literal asterisk' },
-            'literal bracket': { pattern: '\\[', desc: 'Literal opening bracket' },
-            'literal paren': { pattern: '\\(', desc: 'Literal opening parenthesis' },
-            'tab': { pattern: '\\t', desc: 'Tab character' },
-            'newline': { pattern: '\\n', desc: 'Newline character' },
-            'carriage return': { pattern: '\\r', desc: 'Carriage return character' }
+            'email': { pattern: '[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}', desc: 'Basic email pattern', needsContent: false },
+            'phone': { pattern: '\\(?\\d{3}\\)?[-.]?\\d{3}[-.]?\\d{4}', desc: 'US phone number', needsContent: false },
+            'url': { pattern: 'https?://[^\\s]+', desc: 'Basic URL pattern', needsContent: false },
+            'ip': { pattern: '\\b(?:[0-9]{1,3}\\.){3}[0-9]{1,3}\\b', desc: 'IPv4 address', needsContent: false },
+            'hex': { pattern: '#[a-fA-F0-9]{6}', desc: 'Hex color code', needsContent: false },
+            'date': { pattern: '\\d{1,2}/\\d{1,2}/\\d{4}', desc: 'Date MM/DD/YYYY', needsContent: false }
         };
         
         let currentSuggestions = [];
         let selectedIndex = -1;
-        let currentWord = '';
-        let wordStartPos = 0;
+        let currentPattern = null;
+        let insertPosition = 0;
+        let isInputMode = false;
         
-        function getWordAtCursor() {
+        function updateStatus(message) {
+            status.textContent = message;
+        }
+        
+        function getTypedWord() {
             const cursorPos = editor.selectionStart;
             const text = editor.value;
             
             let start = cursorPos;
-            while (start > 0 && /[\w\s]/.test(text[start - 1])) {
+            while (start > 0 && /[a-zA-Z\s]/.test(text[start - 1])) {
                 start--;
             }
             
-            let end = cursorPos;
-            while (end < text.length && /[\w\s]/.test(text[end])) {
-                end++;
-            }
-            
-            return {
-                word: text.substring(start, end).trim(),
-                start: start,
-                end: end
-            };
+            const word = text.substring(start, cursorPos).trim().toLowerCase();
+            return { word, start, end: cursorPos };
         }
         
-        function showAutocomplete(suggestions, x, y) {
+        function showAutocomplete(suggestions) {
             if (suggestions.length === 0) {
                 hideAutocomplete();
                 return;
@@ -185,18 +213,22 @@
                 item.className = 'autocomplete-item';
                 if (index === 0) item.classList.add('selected');
                 
+                const contentIndicator = suggestion.needsContent ? ' ??' : '';
                 item.innerHTML = `
-                    <strong>${suggestion.key}</strong> ? <code>${suggestion.pattern}</code><br>
+                    <strong>${suggestion.key}${contentIndicator}</strong> ? <code>${suggestion.pattern.replace('{content}', '...')}</code><br>
                     <span class="pattern-desc">${suggestion.desc}</span>
                 `;
                 
-                item.addEventListener('click', () => applySuggestion(suggestion));
+                item.addEventListener('click', () => selectPattern(suggestion));
                 autocompletePopup.appendChild(item);
             });
             
-            autocompletePopup.style.left = x + 'px';
-            autocompletePopup.style.top = y + 'px';
+            const pos = getCursorPosition();
+            autocompletePopup.style.left = pos.x + 'px';
+            autocompletePopup.style.top = pos.y + 'px';
             autocompletePopup.style.display = 'block';
+            
+            updateStatus(`Found ${suggestions.length} patterns. Use ?? to navigate, Enter to select.`);
         }
         
         function hideAutocomplete() {
@@ -205,23 +237,68 @@
             selectedIndex = -1;
         }
         
-        function applySuggestion(suggestion) {
-            const cursorPos = editor.selectionStart;
+        function showInputOverlay(pattern) {
+            const pos = getCursorPosition();
+            inputHint.textContent = `Enter content for "${pattern.key}":`;
+            patternInput.value = '';
+            patternInput.placeholder = pattern.desc;
+            
+            inputOverlay.style.left = pos.x + 'px';
+            inputOverlay.style.top = (pos.y + 30) + 'px';
+            inputOverlay.style.display = 'block';
+            
+            setTimeout(() => patternInput.focus(), 50);
+            isInputMode = true;
+            
+            updateStatus(`Type content for "${pattern.key}" and press Enter. ESC to cancel.`);
+        }
+        
+        function hideInputOverlay() {
+            inputOverlay.style.display = 'none';
+            isInputMode = false;
+            currentPattern = null;
+            editor.focus();
+        }
+        
+        function selectPattern(pattern) {
+            hideAutocomplete();
+            currentPattern = pattern;
+            
+            const wordInfo = getTypedWord();
+            insertPosition = wordInfo.start;
+            
+            if (pattern.needsContent) {
+                showInputOverlay(pattern);
+            } else {
+                insertPattern(pattern.pattern);
+                updateStatus(`Inserted "${pattern.key}" pattern.`);
+            }
+        }
+        
+        function insertPattern(patternText) {
             const text = editor.value;
-            const wordInfo = getWordAtCursor();
+            const wordInfo = getTypedWord();
             
             const before = text.substring(0, wordInfo.start);
             const after = text.substring(wordInfo.end);
-            const newText = before + suggestion.pattern + after;
+            const newText = before + patternText + after;
             
             editor.value = newText;
             
-            // Position cursor after the inserted pattern
-            const newCursorPos = wordInfo.start + suggestion.pattern.length;
+            const newCursorPos = wordInfo.start + patternText.length;
             editor.setSelectionRange(newCursorPos, newCursorPos);
             
-            hideAutocomplete();
             editor.focus();
+        }
+        
+        function applyPatternWithContent(content) {
+            if (!currentPattern) return;
+            
+            let finalPattern = currentPattern.pattern.replace(/{content}/g, content);
+            insertPattern(finalPattern);
+            
+            hideInputOverlay();
+            updateStatus(`Inserted "${currentPattern.key}" with content: ${content}`);
         }
         
         function updateSelection(direction) {
@@ -249,26 +326,28 @@
             const charWidth = 8.4;
             
             return {
-                x: currentColumn * charWidth + 10,
+                x: Math.min(currentColumn * charWidth + 10, window.innerWidth - 350),
                 y: currentLine * lineHeight + 30
             };
         }
         
+        // Editor event listeners
         editor.addEventListener('input', (e) => {
-            const wordInfo = getWordAtCursor();
-            currentWord = wordInfo.word.toLowerCase();
-            wordStartPos = wordInfo.start;
+            if (isInputMode) return;
             
-            if (currentWord.length > 1) {
+            const wordInfo = getTypedWord();
+            const currentWord = wordInfo.word;
+            
+            if (currentWord.length > 0) {
                 const matches = Object.entries(regexPatterns)
                     .filter(([key]) => key.toLowerCase().includes(currentWord))
                     .map(([key, value]) => ({ 
                         key, 
                         pattern: value.pattern, 
-                        desc: value.desc 
+                        desc: value.desc,
+                        needsContent: value.needsContent
                     }))
                     .sort((a, b) => {
-                        // Prioritize exact matches and starts-with matches
                         const aStarts = a.key.toLowerCase().startsWith(currentWord);
                         const bStarts = b.key.toLowerCase().startsWith(currentWord);
                         if (aStarts && !bStarts) return -1;
@@ -277,17 +356,20 @@
                     });
                 
                 if (matches.length > 0) {
-                    const pos = getCursorPosition();
-                    showAutocomplete(matches, pos.x, pos.y);
+                    showAutocomplete(matches);
                 } else {
                     hideAutocomplete();
+                    updateStatus('No matching patterns found.');
                 }
             } else {
                 hideAutocomplete();
+                updateStatus('Ready - Start typing to see suggestions');
             }
         });
         
         editor.addEventListener('keydown', (e) => {
+            if (isInputMode) return;
+            
             if (autocompletePopup.style.display === 'block') {
                 switch (e.key) {
                     case 'ArrowDown':
@@ -302,27 +384,59 @@
                     case 'Tab':
                         e.preventDefault();
                         if (selectedIndex >= 0 && currentSuggestions[selectedIndex]) {
-                            applySuggestion(currentSuggestions[selectedIndex]);
+                            selectPattern(currentSuggestions[selectedIndex]);
                         }
                         break;
                     case 'Escape':
                         hideAutocomplete();
+                        updateStatus('Cancelled selection.');
                         break;
                 }
             }
         });
         
-        // Hide autocomplete when clicking outside
-        document.addEventListener('click', (e) => {
-            if (!editor.contains(e.target) && !autocompletePopup.contains(e.target)) {
-                hideAutocomplete();
+        // Pattern input event listeners
+        patternInput.addEventListener('keydown', (e) => {
+            switch (e.key) {
+                case 'Enter':
+                    e.preventDefault();
+                    const content = patternInput.value.trim();
+                    if (content) {
+                        applyPatternWithContent(content);
+                    } else {
+                        updateStatus('Please enter content for the pattern.');
+                    }
+                    break;
+                case 'Escape':
+                    hideInputOverlay();
+                    updateStatus('Cancelled pattern input.');
+                    break;
             }
         });
         
-        // Hide autocomplete when editor loses focus
-        editor.addEventListener('blur', () => {
-            setTimeout(hideAutocomplete, 150);
+        // Click outside handlers
+        document.addEventListener('click', (e) => {
+            if (!editor.contains(e.target) && 
+                !autocompletePopup.contains(e.target) && 
+                !inputOverlay.contains(e.target)) {
+                hideAutocomplete();
+                hideInputOverlay();
+            }
         });
+        
+        // Focus handlers
+        editor.addEventListener('blur', () => {
+            if (!isInputMode) {
+                setTimeout(() => {
+                    if (!patternInput.matches(':focus')) {
+                        hideAutocomplete();
+                    }
+                }, 150);
+            }
+        });
+        
+        // Initialize
+        updateStatus('Ready - Start typing to see suggestions');
     </script>
 </body>
 </html>
